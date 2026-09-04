@@ -13,7 +13,7 @@ services:
       - QDB_TELEMETRY_ENABLED=false
       - QDB_LOG_W_STDOUT_LEVEL=${QDB_LOG_LEVEL:-ERROR}
     volumes:
-      - ${QUESTDB_DATA_DIR:-questdb_data}:/var/lib/questdb
+      - ${QUEST_DB_DATA_DIR:-questdb_data}:/var/lib/questdb
 
   jaeger:
     image: jaegertracing/jaeger:2.20.0
