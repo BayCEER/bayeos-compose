@@ -1,0 +1,23 @@
+# Caddyfile example for bayeos-compose
+# Copy to /etc/caddy/Caddyfile on target Debian server
+# Set domain: sudo caddy run --config /etc/caddy/Caddyfile
+
+your.domain.com {
+    handle /bayeos-api/* {
+        uri strip_prefix /bayeos-api
+        reverse_proxy 127.0.0.1:5532
+    }
+    handle /bayeos-api {
+        redir /bayeos-api/ permanent
+    }
+    handle /jaeger/* {
+        uri strip_prefix /jaeger
+        reverse_proxy 127.0.0.1:16686
+    }
+    handle /jaeger {
+        redir /jaeger/ permanent
+    }
+    handle {
+        respond "Not Found" 404
+    }
+}

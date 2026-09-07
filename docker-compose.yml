@@ -6,9 +6,9 @@ services:
     container_name: bayeos_questdb
     restart: unless-stopped
     ports:
-      - "9000:9000" # Web-Konsole und REST-API
-      - "9009:9009" # InfluxDB Line Protocol (ILP) für schnelle Ingestion
-      - "8812:8812" # PostgreSQL Wire Protocol (PGWire) für SQL-Zugriff
+      - "127.0.0.1:9000:9000" # Web-Konsole und REST-API
+      - "127.0.0.1:9009:9009" # InfluxDB Line Protocol (ILP) für schnelle Ingestion
+      - "127.0.0.1:8812:8812" # PostgreSQL Wire Protocol (PGWire) für SQL-Zugriff
     environment:
       - QDB_TELEMETRY_ENABLED=false
       - QDB_LOG_W_STDOUT_LEVEL=${QDB_LOG_LEVEL:-ERROR}
@@ -23,7 +23,7 @@ services:
     volumes:
       - ./jaeger-config.yaml:/jaeger/config.yaml:ro
     ports:
-      - "16686:16686"
+      - "127.0.0.1:16686:16686"
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.142.0
@@ -33,7 +33,7 @@ services:
     volumes:
       - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
     ports:
-      - "4317:4317" # OTLP gRPC
+      - "127.0.0.1:4317:4317" # OTLP gRPC
     depends_on:
       jaeger:
         condition: service_started
@@ -53,7 +53,7 @@ services:
       retries: 5
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - ${POSTGRES_DATA_DIR:-postgresdb_data}:/var/lib/postgresql/data
 
@@ -88,7 +88,7 @@ services:
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
 
     ports:
-      - "5532:5532"
+      - "127.0.0.1:5532:5532"
 
     depends_on:
       questdb:
