@@ -7,7 +7,6 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:9000:9000" # Web-Konsole und REST-API
-      - "127.0.0.1:9009:9009" # InfluxDB Line Protocol (ILP) für schnelle Ingestion
       - "127.0.0.1:8812:8812" # PostgreSQL Wire Protocol (PGWire) für SQL-Zugriff
     environment:
       - QDB_TELEMETRY_ENABLED=false
