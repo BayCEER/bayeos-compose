@@ -2,7 +2,7 @@ service:
   extensions: [jaeger_storage, jaeger_query, healthcheckv2]
   telemetry:
     logs:
-      level: error
+      level: debug
   pipelines:
     traces:
       receivers: [otlp]
@@ -15,6 +15,7 @@ extensions:
     http:
       endpoint: 0.0.0.0:13133
   jaeger_query:
+    base_path: /jaeger
     storage:
       traces: memory_store
   jaeger_storage:
