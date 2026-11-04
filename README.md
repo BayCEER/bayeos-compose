@@ -129,13 +129,3 @@ Volumes can be removed with:
 ```sh
 docker compose down -v
 ```
-
-## PG Wire Access to questdb
-
-Linux console client:
-
-```bash
-psql -h localhost -p 8812 -U admin -d qdb
-```
-
-Password: quest
