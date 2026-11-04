@@ -11,8 +11,16 @@ services:
     environment:
       - QDB_TELEMETRY_ENABLED=false
       - QDB_LOG_W_STDOUT_LEVEL=${QDB_LOG_LEVEL:-ERROR}
+      - QDB_PG_USER=${QUEST_DB_USER:?Set QUEST_DB_USER in your .env file}
+      - QDB_PG_PASSWORD=${QUEST_DB_PASSWORD:?Set QUEST_DB_PASSWORD in your .env file}
     volumes:
       - ${QUEST_DB_DATA_DIR:-questdb_data}:/var/lib/questdb
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9003"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
 
   jaeger:
     image: jaegertracing/jaeger:2.20.0
@@ -38,19 +46,24 @@ services:
         condition: service_started
 
   postgresdb:
-    image: postgres:latest
-    container_name: bayeos_postgresdb
+    # Custom image: postgres:17 + plperl/Math::Spline; the gateway database
+    # (init/01-bayeos-gateway.sh) is baked into the image and runs on first init.
+    image: ${BAYEOS_POSTGRES_IMAGE:-bayceer/bayeos-postgres:latest}
+    container_name: bayeos_postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-bayeos}
-      POSTGRES_USER: ${POSTGRES_USER:-bayeos}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bayeos}
-      PGDATA: /var/lib/postgresql/data
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in your .env file}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your .env file}
+      # second ("dual instance") database for bayeos-gateway
+      GW_DB: ${GW_DB:-xbee}
+      GW_DB_USER: ${GW_DB_USER:-xbee}
+      GW_DB_PASSWORD: ${GW_DB_PASSWORD:?Set GW_DB_PASSWORD in your .env file}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
-      start_period: 60s
+      start_period: 20s
     restart: unless-stopped
     ports:
       - "127.0.0.1:5432:5432"
@@ -58,47 +71,131 @@ services:
       - ${POSTGRES_DATA_DIR:-postgresdb_data}:/var/lib/postgresql/data
 
   bayeos-api:
-    image: ${BAYEOS_API_IMAGE:-oarchner/bayeos-api:latest}
+    image: ${BAYEOS_API_IMAGE:-bayceer/bayeos-api:latest}
     container_name: bayeos_api
     restart: unless-stopped
     environment:
       MIGRATIONS_PATH: /migrations
 
-      PG_DB_URL: postgres://${POSTGRES_USER:-bayeos}:${POSTGRES_PASSWORD:-bayeos}@postgresdb:5432/${POSTGRES_DB:-bayeos}
-      QUEST_DB_URL: ${QUEST_DB_URL:-postgresql://admin:quest@questdb:8812/qdb?sslmode=disable}
+      PG_DB_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgresdb:5432/${POSTGRES_DB:-bayeos}
+      QUEST_DB_URL: ${QUEST_DB_URL:-postgresql://${QUEST_DB_USER}:${QUEST_DB_PASSWORD}@questdb:8812/qdb?sslmode=disable}
 
       WS_API_PORT: ${WS_API_PORT:-5532}
       WS_BASE_PATH: ${WS_BASE_PATH:-bayeos-api}
-      WS_TRUSTED_PROXIES: ${WS_TRUSTED_PROXIES:-}
+      WS_API_KEY: ${WS_API_KEY:?Set WS_API_KEY in your .env file}
       WS_LOG_LEVEL: ${WS_LOG_LEVEL:-info}
+      WS_TRUSTED_PROXIES: ${WS_TRUSTED_PROXIES:-}
       WS_RESPONSE_DELAY: ${WS_RESPONSE_DELAY:-0}
       WS_CORS_HEADER: ${WS_CORS_HEADER:-false}
       WS_ASSETS_PATH: ${WS_ASSETS_PATH:-/assets}
-      WS_API_KEY: ${WS_API_KEY:-ChangeThisApiKey}
       WS_GIN_MODE: ${WS_GIN_MODE:-release}
       WS_ID_TOKEN_EXPIRES_DAYS: ${WS_ID_TOKEN_EXPIRES_DAYS:-120}
       WS_LDAP_ENABLED: ${WS_LDAP_ENABLED:-false}
-      WS_LDAP_URL: ${WS_LDAP_URL:-ldaps://localhost:636}
-      WS_LDAP_BASE: ${WS_LDAP_BASE:-dc=my-company,dc=com}
-      WS_LDAP_SIGNIN_ATTRIBUTE: ${WS_LDAP_SIGNIN_ATTRIBUTE:-cn}
-      WS_LDAP_DISPLAY_ATTRIBUTE: ${WS_LDAP_DISPLAY_ATTRIBUTE:-displayName}
-      WS_LDAP_EMAIL_ATTRIBUTE: ${WS_LDAP_EMAIL_ATTRIBUTE:-mail}
+      WS_LDAP_URL: ${WS_LDAP_URL:-}
+      WS_LDAP_BASE: ${WS_LDAP_BASE:-}
+      WS_LDAP_SIGNIN_ATTRIBUTE: ${WS_LDAP_SIGNIN_ATTRIBUTE:-}
+      WS_LDAP_DISPLAY_ATTRIBUTE: ${WS_LDAP_DISPLAY_ATTRIBUTE:-}
+      WS_LDAP_EMAIL_ATTRIBUTE: ${WS_LDAP_EMAIL_ATTRIBUTE:-}
 
       OTEL_SERVICE_NAME: bayeos-api
       OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
 
     ports:
-      - "127.0.0.1:5532:5532"
+      - "127.0.0.1:${WS_API_PORT:-5532}:${WS_API_PORT:-5532}"
 
     depends_on:
       questdb:
-        condition: service_started
+        condition: service_healthy
       postgresdb:
         condition: service_healthy
       otel-collector:
         condition: service_started
 
+  bayeos-gateway:
+    image: ${BAYEOS_GATEWAY_IMAGE:-bayceer/bayeos-gateway:latest}
+    container_name: bayeos_gateway
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-bayeos}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in your .env file}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your .env file}
+      # database (second database in the postgresdb instance)
+      GW_DB_URL: ${GW_DB_URL:-jdbc:postgresql://postgresdb:5432/${GW_DB:-xbee}}
+      GW_DB_USER: ${GW_DB_USER:?Set GW_DB_USER in your .env file}
+      GW_DB_PASSWORD: ${GW_DB_PASSWORD:?Set GW_DB_PASSWORD in your .env file}
+      GW_PORT: ${GW_PORT:-5533}
+      GW_CONTEXT_PATH: ${GW_CONTEXT_PATH:-/gateway}
+      GW_LOGGING_LEVEL_ROOT: ${GW_LOGGING_LEVEL_ROOT:-INFO}
+      GW_COOKIE_MAX_AGE: ${GW_COOKIE_MAX_AGE:-1209600}
+      GW_CALC_WAIT_SECS: ${GW_CALC_WAIT_SECS:-120}
+      GW_DELETE_WAIT_SECS: ${GW_DELETE_WAIT_SECS:-120}
+
+      # exporter (pushes frames to bayeos-api)
+      GW_EXPORT_PROTO: ${GW_EXPORT_PROTO:-http}
+      GW_EXPORT_HOST: ${GW_EXPORT_HOST:-bayeos-api}
+      GW_EXPORT_PORT: ${GW_EXPORT_PORT:-5532}
+      GW_EXPORT_CONTEXT: ${GW_EXPORT_CONTEXT:-/bayeos-api}
+
+      GW_EXPORT_USER: ${GW_EXPORT_USER:?Set GW_EXPORT_USER in your .env file}
+      GW_EXPORT_PASSWORD: ${GW_EXPORT_PASSWORD:?Set GW_EXPORT_PASSWORD in your .env file}
+
+      GW_EXPORT_HOME_PATH: ${GW_EXPORT_HOME_PATH:-/}
+      GW_EXPORT_BULK_SIZE: ${GW_EXPORT_BULK_SIZE:-10000}
+      GW_EXPORT_WAIT_SECS: ${GW_EXPORT_WAIT_SECS:-120}
+
+      GW_LOCAL_FILE_PATH: ${GW_LOCAL_FILE_PATH:-/data/uploads}
+      GW_LOCAL_FILE_WAIT_SECS: ${GW_LOCAL_FILE_WAIT_SECS:-600}
+      GW_LOCAL_FILE_EXPIRED_MONTH: ${GW_LOCAL_FILE_EXPIRED_MONTH:-3}
+
+      # background jobs
+
+      # delete job (PostgreSQL interval syntax)
+      GW_DELETE_OBS_RETENTION: "${GW_DELETE_OBS_RETENTION:-60 days}"
+      GW_DELETE_MSG_RETENTION: "${GW_DELETE_MSG_RETENTION:-60 days}"
+      GW_DELETE_TEMPLATE_RETENTION: "${GW_DELETE_TEMPLATE_RETENTION:-1 years}"
+      GW_DELETE_BOARD_RETENTION: "${GW_DELETE_BOARD_RETENTION:-1 years}"
+      GW_DELETE_BOARD_GROUP_RETENTION: "${GW_DELETE_BOARD_GROUP_RETENTION:-1 years}"
+
+      GW_MAIL_HOST: ${GW_MAIL_HOST:-}
+      GW_MAIL_PORT: ${GW_MAIL_PORT:-25}
+      GW_MAIL_USERNAME: ${GW_MAIL_USERNAME:-}
+      GW_MAIL_PASSWORD: ${GW_MAIL_PASSWORD:-}
+
+      # --- optional: LDAP authentication ---
+      GW_LDAP_AUTH: ${GW_LDAP_AUTH:-false}
+      GW_LDAP_DN: ${GW_LDAP_DN:-cn=%s}
+      GW_LDAP_HOST: ${GW_LDAP_HOST:-localhost}
+      GW_LDAP_PORT: ${GW_LDAP_PORT:-636}
+      GW_LDAP_SSL: ${GW_LDAP_SSL:-true}
+      GW_LDAP_VERSION: ${GW_LDAP_VERSION:-3}
+      GW_LDAP_REFINE_USER: ${GW_LDAP_REFINE_USER:-true}
+      GW_LDAP_SEARCH: ${GW_LDAP_SEARCH:-false}
+      GW_LDAP_BASE: ${GW_LDAP_BASE:-ou=users}
+      GW_LDAP_SN: ${GW_LDAP_SN:-sn}
+      GW_LDAP_GIVEN_NAME: ${GW_LDAP_GIVEN_NAME:-givenName}
+
+      # --- optional: metrics (Redis) ---
+      GW_REDIS_EVENTS: ${GW_REDIS_EVENTS:-false}
+      GW_REDIS_HOST: ${GW_REDIS_HOST:-localhost}
+      GW_REDIS_PORT: ${GW_REDIS_PORT:-6379}
+      GW_REDIS_STATS_WAIT_SECS: ${GW_REDIS_STATS_WAIT_SECS:-120}
+
+      # --- optional: notifications (Nagios compatible) ---
+      GW_NOTIFICATION: ${GW_NOTIFICATION:-false}
+      GW_NOTIFICATION_HOST: ${GW_NOTIFICATION_HOST:-}
+      GW_NOTIFICATION_WAIT_SECS: ${GW_NOTIFICATION_WAIT_SECS:-60}
+      GW_NOTIFICATION_MAX_SOFT_STATES: ${GW_NOTIFICATION_MAX_SOFT_STATES:-4}
+      GW_NOTIFICATION_SENDER: ${GW_NOTIFICATION_SENDER:-}
+    ports:
+      - "127.0.0.1:${GW_PORT:-5533}:${GW_PORT:-5533}"
+    volumes:
+      - ${GW_UPLOADS_DIR:-gateway_uploads}:/data/uploads
+    depends_on:
+      postgresdb:
+        condition: service_healthy
+
 volumes:
   questdb_data:
   postgresdb_data:
+  gateway_uploads:

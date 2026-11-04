@@ -10,7 +10,11 @@ Runtime deployment configuration for the BayEOS V3 API stack using **Docker Hub 
    cp .env_example .env
    ```
 
-   Set your values before first start. All variables are optional — uncomment and set only what you need to override the defaults in `docker-compose.yml`. For example choose a specific release by setting `BAYEOS_API_IMAGE` in `.env`
+Set the required values in `.env`. Use strong, unique values and keep `.env` out of version control.
+
+Image overrides are optional. To pin a release, uncomment and edit one or more
+of `BAYEOS_API_IMAGE`, `BAYEOS_GATEWAY_IMAGE`, and `BAYEOS_POSTGRES_IMAGE` in
+`.env`. Otherwise, Compose uses the defaults shown below.
 
 2. Start the stack:
 
@@ -20,13 +24,17 @@ Runtime deployment configuration for the BayEOS V3 API stack using **Docker Hub 
 
    This pulls all images from Docker Hub and starts the full stack:
 
-   | Service        | Image                                             |
-   | -------------- | ------------------------------------------------- |
-   | questdb        | `questdb/questdb:latest`                          |
-   | jaeger         | `jaegertracing/jaeger:2.20.0`                     |
-   | otel-collector | `otel/opentelemetry-collector-contrib:0.142.0`    |
-   | postgresdb     | `postgres:latest`                                 |
-   | bayeos-api     | `${BAYEOS_API_IMAGE:-oarchner/bayeos-api:latest}` |
+   | Service        | Image                                                      |
+   | -------------- | ---------------------------------------------------------- |
+   | questdb        | `questdb/questdb:latest`                                   |
+   | jaeger         | `jaegertracing/jaeger:2.20.0`                              |
+   | otel-collector | `otel/opentelemetry-collector-contrib:0.142.0`             |
+   | postgresdb     | `${BAYEOS_POSTGRES_IMAGE:-bayceer/bayeos-postgres:latest}` |
+   | bayeos-api     | `${BAYEOS_API_IMAGE:-bayceer/bayeos-api:latest}`           |
+   | bayeos-gateway | `${BAYEOS_GATEWAY_IMAGE:-bayceer/bayeos-gateway:latest}`   |
+
+   The postgres image is BayEOS-specific: it adds PL/Perl and Math::Spline for
+   the gateway schema and creates the second gateway database on first initialization of the data volume.
 
 ## Updating
 
@@ -53,6 +61,7 @@ Config-file changes (`jaeger-config.yaml`, `otel-collector-config.yaml`) take ef
 | Service        | Host address            |
 | -------------- | ----------------------- |
 | bayeos-api     | `127.0.0.1:5532`        |
+| bayeos-gateway | `127.0.0.1:5533`        |
 | jaeger         | `127.0.0.1:16686`       |
 | questdb        | `127.0.0.1:9000`/`8812` |
 | otel-collector | `127.0.0.1:4317`        |
@@ -113,9 +122,20 @@ Config-file changes (`jaeger-config.yaml`, `otel-collector-config.yaml`) take ef
 
 - `questdb_data`
 - `postgresdb_data`
+- `gateway_uploads`
 
 Volumes can be removed with:
 
 ```sh
 docker compose down -v
 ```
+
+## PG Wire Access to questdb
+
+Linux console client:
+
+```bash
+psql -h localhost -p 8812 -U admin -d qdb
+```
+
+Password: quest
