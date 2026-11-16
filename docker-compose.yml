@@ -1,4 +1,7 @@
-name: bayeos-compose
+name: bayeos
+
+# A single service can be started and recreated with:
+# docker compose up -d --force-recreate bayeos-gateway
 
 services:
   questdb:
@@ -45,18 +48,39 @@ services:
       jaeger:
         condition: service_started
 
-  postgresdb:
-    # Custom image: postgres:17 + plperl/Math::Spline; the gateway database
-    # (init/01-bayeos-gateway.sh) is baked into the image and runs on first init.
-    image: ${BAYEOS_POSTGRES_IMAGE:-bayceer/bayeos-postgres:latest}
-    container_name: bayeos_postgres
+  bayeos-db:
+    image: postgres:17
+    container_name: bayeos_db
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-bayeos}
+      POSTGRES_DB: bayeos
       POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in your .env file}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your .env file}
-      # second ("dual instance") database for bayeos-gateway
-      GW_DB: ${GW_DB:-xbee}
-      GW_DB_USER: ${GW_DB_USER:-xbee}
+      BAYEOS_DB_USER: ${BAYEOS_DB_USER:?Set BAYEOS_DB_USER in your .env file}
+      BAYEOS_DB_PASSWORD: ${BAYEOS_DB_PASSWORD:?Set BAYEOS_DB_PASSWORD in your .env file}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    volumes:
+      - ${BAYEOS_DB_DATA:-bayeos_db_data}:/var/lib/postgresql/data
+      - ./01-init-bayeos-db.sh:/docker-entrypoint-initdb.d/01-init-bayeos-db.sh:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  bayeos-gateway-db:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway-db
+    container_name: bayeos_gateway_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: gateway
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in your .env file}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your .env file}
+      GW_DB_USER: ${GW_DB_USER:?Set GW_DB_USER in your .env file}
       GW_DB_PASSWORD: ${GW_DB_PASSWORD:?Set GW_DB_PASSWORD in your .env file}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
@@ -64,11 +88,11 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:5432:5432"
     volumes:
-      - ${POSTGRES_DATA_DIR:-postgresdb_data}:/var/lib/postgresql/data
+      - ${GW_DB_DATA:-gateway_db_data}:/var/lib/postgresql/data
+      - ./01-init-gw-db.sh:/docker-entrypoint-initdb.d/01-init-gw-db.sh:ro
+    ports:
+      - "127.0.0.1:5433:5432"
 
   bayeos-api:
     image: ${BAYEOS_API_IMAGE:-bayceer/bayeos-api:latest}
@@ -77,8 +101,8 @@ services:
     environment:
       MIGRATIONS_PATH: /migrations
 
-      PG_DB_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgresdb:5432/${POSTGRES_DB:-bayeos}
-      QUEST_DB_URL: ${QUEST_DB_URL:-postgresql://${QUEST_DB_USER}:${QUEST_DB_PASSWORD}@questdb:8812/qdb?sslmode=disable}
+      PG_DB_URL: postgres://${BAYEOS_DB_USER}:${BAYEOS_DB_PASSWORD}@bayeos-db:5432/bayeos
+      QUEST_DB_URL: postgresql://${QUEST_DB_USER}:${QUEST_DB_PASSWORD}@questdb:8812/qdb?sslmode=disable
 
       WS_API_PORT: ${WS_API_PORT:-5532}
       WS_BASE_PATH: ${WS_BASE_PATH:-bayeos-api}
@@ -107,7 +131,7 @@ services:
     depends_on:
       questdb:
         condition: service_healthy
-      postgresdb:
+      bayeos-db:
         condition: service_healthy
       otel-collector:
         condition: service_started
@@ -117,11 +141,11 @@ services:
     container_name: bayeos_gateway
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-bayeos}
+      POSTGRES_DB: gateway
       POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in your .env file}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your .env file}
       # database (second database in the postgresdb instance)
-      GW_DB_URL: ${GW_DB_URL:-jdbc:postgresql://postgresdb:5432/${GW_DB:-xbee}}
+      GW_DB_URL: ${GW_DB_URL:-jdbc:postgresql://bayeos-gateway-db:5432/gateway}
       GW_DB_USER: ${GW_DB_USER:?Set GW_DB_USER in your .env file}
       GW_DB_PASSWORD: ${GW_DB_PASSWORD:?Set GW_DB_PASSWORD in your .env file}
       GW_PORT: ${GW_PORT:-5533}
@@ -192,10 +216,11 @@ services:
     volumes:
       - ${GW_UPLOADS_DIR:-gateway_uploads}:/data/uploads
     depends_on:
-      postgresdb:
+      bayeos-gateway-db:
         condition: service_healthy
 
 volumes:
   questdb_data:
-  postgresdb_data:
+  bayeos_db_data:
+  gateway_db_data:
   gateway_uploads:

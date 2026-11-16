@@ -1,6 +1,6 @@
 # bayeos-compose
 
-Runtime deployment configuration for the BayEOS V3 API stack using **Docker Hub images only**. Every service is pulled from Docker Hub.
+Runtime deployment configuration for the BayEOS V3 API stack
 
 ## Usage
 
@@ -12,29 +12,13 @@ Runtime deployment configuration for the BayEOS V3 API stack using **Docker Hub 
 
 Set the required values in `.env`. Use strong, unique values and keep `.env` out of version control.
 
-Image overrides are optional. To pin a release, uncomment and edit one or more
-of `BAYEOS_API_IMAGE`, `BAYEOS_GATEWAY_IMAGE`, and `BAYEOS_POSTGRES_IMAGE` in
-`.env`. Otherwise, Compose uses the defaults shown below.
-
 2. Start the stack:
 
    ```sh
    docker compose up -d
    ```
 
-   This pulls all images from Docker Hub and starts the full stack:
-
-   | Service        | Image                                                      |
-   | -------------- | ---------------------------------------------------------- |
-   | questdb        | `questdb/questdb:latest`                                   |
-   | jaeger         | `jaegertracing/jaeger:2.20.0`                              |
-   | otel-collector | `otel/opentelemetry-collector-contrib:0.142.0`             |
-   | postgresdb     | `${BAYEOS_POSTGRES_IMAGE:-bayceer/bayeos-postgres:latest}` |
-   | bayeos-api     | `${BAYEOS_API_IMAGE:-bayceer/bayeos-api:latest}`           |
-   | bayeos-gateway | `${BAYEOS_GATEWAY_IMAGE:-bayceer/bayeos-gateway:latest}`   |
-
-   The postgres image is BayEOS-specific: it adds PL/Perl and Math::Spline for
-   the gateway schema and creates the second gateway database on first initialization of the data volume.
+   This pulls images from Docker Hub and starts the full stack:
 
 ## Updating
 
@@ -56,21 +40,7 @@ Config-file changes (`jaeger-config.yaml`, `otel-collector-config.yaml`) take ef
 
 ## HTTP and TLS
 
-`bayeos-api` serves plain HTTP on port `5532`. It does not terminate TLS itself; to expose the API over HTTPS, place a reverse proxy (e.g. Apache HTTP Server in front and terminate TLS there. All services are bound to `127.0.0.1` (localhost only), so the reverse proxy runs natively on the same host and forwards to the loopback addresses listed below.
-
-| Service        | Host address            |
-| -------------- | ----------------------- |
-| bayeos-api     | `127.0.0.1:5532`        |
-| bayeos-gateway | `127.0.0.1:5533`        |
-| jaeger         | `127.0.0.1:16686`       |
-| questdb        | `127.0.0.1:9000`/`8812` |
-| otel-collector | `127.0.0.1:4317`        |
-| postgresdb     | `127.0.0.1:5432`        |
-
-## Config files
-
-- `jaeger-config.yaml`
-- `otel-collector-config.yaml`
+Some services serve plain HTTP. They doe not terminate TLS; to expose their API over HTTPS, place a reverse proxy (e.g. Apache HTTP Server in front and terminate TLS there. All services are bound to `127.0.0.1` (localhost only), so the reverse proxy runs natively on the same host and forwards to the loopback address.
 
 ## Jaeger UI Reverse Proxy Config on Apache2
 
@@ -120,12 +90,12 @@ Config-file changes (`jaeger-config.yaml`, `otel-collector-config.yaml`) take ef
 
 ## Data volumes
 
-- `questdb_data`
-- `postgresdb_data`
-- `gateway_uploads`
+Volumes are defined by pyth variables in .env.
 
-Volumes can be removed with:
+To remove all volumes (Danger!) run:
 
 ```sh
 docker compose down -v
 ```
+
+## Logs

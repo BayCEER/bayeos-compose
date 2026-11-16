@@ -1,0 +1,9 @@
+FROM postgres:17
+
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+    postgresql-plperl-17 \
+    libmath-spline-perl \
+    ; \
+    rm -rf /var/lib/apt/lists/*
