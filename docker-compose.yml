@@ -49,10 +49,13 @@ services:
         condition: service_started
 
   bayeos-db:
-    image: postgres:17
+    build:
+      context: .
+      dockerfile: Dockerfile.bayeos-db
     container_name: bayeos_db
     restart: unless-stopped
     environment:
+      TZ: ${TZ:-Europe/Berlin}
       POSTGRES_DB: bayeos
       POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in your .env file}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your .env file}
@@ -77,6 +80,7 @@ services:
     container_name: bayeos_gateway_db
     restart: unless-stopped
     environment:
+      TZ: ${TZ:-Europe/Berlin}
       POSTGRES_DB: gateway
       POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in your .env file}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your .env file}
